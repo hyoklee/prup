@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bring the user's open HDFGroup/hdf5 PRs up to date with develop.
+"""Bring the user's open iowarp/clio-core PRs up to date with dev.
 
 Uses GitHub's "Update branch" API (merges the base branch into the PR head),
 so no local clone is needed for the normal path. ``--conflicts N`` does a local
@@ -19,11 +19,13 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-REPO = os.environ.get("PRUP_REPO", "HDFGroup/hdf5")
-BASE = os.environ.get("PRUP_BASE", "develop")
+REPO = os.environ.get("PRUP_REPO", "iowarp/clio-core")
+BASE = os.environ.get("PRUP_BASE", "dev")
 AUTHOR = os.environ.get("PRUP_AUTHOR", "hyoklee")
 SKIP_LABEL = "prup:skip"
-CHANGELOG = "release_docs/CHANGELOG.md"
+# Conflicts confined to this file are auto-resolved (e.g. release_docs/CHANGELOG.md
+# for HDFGroup/hdf5). clio-core has no such file, so it is off by default.
+CHANGELOG = os.environ.get("PRUP_CHANGELOG", "")
 API = "https://api.github.com"
 WORK_DIR = Path(os.environ.get("PRUP_WORK_DIR", Path(__file__).resolve().parent.parent / ".work"))
 
@@ -58,7 +60,7 @@ class GitHub:
                 "Authorization": f"Bearer {self.token}",
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "prup-hdf5-pr-sync",
+                "User-Agent": "prup-pr-sync",
             },
         )
         try:
@@ -131,7 +133,7 @@ def git(*args: str, cwd: Path, check: bool = True) -> subprocess.CompletedProces
 
 
 def scratch_clone() -> Path:
-    clone = WORK_DIR / "hdf5"
+    clone = WORK_DIR / REPO.split("/")[-1]
     if not (clone / ".git").exists():
         clone.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
@@ -203,7 +205,7 @@ def removed_lines(clone: Path, *diff_args: str) -> set[str]:
 
 
 def resolve_changelog(pr: dict, push: bool = True) -> tuple[str, str]:
-    """Merge develop into the PR branch, keeping both sides of CHANGELOG-only conflicts.
+    """Merge the base branch into the PR branch, keeping both sides of CHANGELOG-only conflicts.
 
     Returns (status, detail): ``resolved`` after a non-force push, ``would_resolve``
     when ``push`` is False, otherwise ``conflict`` with the reason it was left alone.
@@ -233,7 +235,7 @@ def resolve_changelog(pr: dict, push: bool = True) -> tuple[str, str]:
         git("add", CHANGELOG, cwd=clone)
         git("commit", "--quiet", "--no-edit", cwd=clone)
 
-        # The merge must carry exactly the PR's own changes on top of develop.
+        # The merge must carry exactly the PR's own changes on top of the base.
         pr_files = git("diff", "--name-only", f"origin/{BASE}...{head_ref}", cwd=clone).stdout
         merged_files = git("diff", "--name-only", f"origin/{BASE}", "HEAD", cwd=clone).stdout
         if pr_files != merged_files or not removed_lines(clone, f"origin/{BASE}", "HEAD") <= (
@@ -258,7 +260,7 @@ def main() -> int:
     ap.add_argument("--json", action="store_true", help="print machine-readable JSON")
     ap.add_argument("--conflicts", type=int, metavar="PR", help="list conflicting files for PR")
     ap.add_argument("--no-resolve", action="store_true",
-                    help=f"do not auto-resolve conflicts confined to {CHANGELOG}")
+                    help="do not auto-resolve conflicts confined to $PRUP_CHANGELOG")
     args = ap.parse_args()
 
     if args.conflicts:
@@ -275,7 +277,7 @@ def main() -> int:
             if row["status"] == "conflict":
                 try:
                     row["conflicting_files"] = list_conflicts(pr["number"])
-                    if row["conflicting_files"] == [CHANGELOG] and not args.no_resolve:
+                    if CHANGELOG and row["conflicting_files"] == [CHANGELOG] and not args.no_resolve:
                         row["status"], row["detail"] = resolve_changelog(pr)
                 except subprocess.CalledProcessError as exc:
                     row["conflicting_files"] = [f"(could not list: {exc.stderr or exc})"]

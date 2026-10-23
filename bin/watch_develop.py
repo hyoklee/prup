@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run the hdf5-pr-sync CLIO agent when HDFGroup/hdf5 develop gets a new commit.
+"""Run the clio-core-pr-sync CLIO agent when iowarp/clio-core dev gets a new commit.
 
 Meant for cron (e.g. every 10 minutes). Each run:
-  1. reads the develop head with ``git ls-remote`` (no API quota used);
+  1. reads the base-branch head with ``git ls-remote`` (no API quota used);
   2. exits if it matches the SHA recorded by the last successful run;
-  3. otherwise starts a CLIO session on the ``hdf5-pr-sync`` blueprint and asks it
+  3. otherwise starts a CLIO session on the ``clio-core-pr-sync`` blueprint and asks it
      to sync the PRs, falling back to running ``sync_prs.py`` directly if the CLIO
      server cannot be used (``--runner direct`` skips CLIO entirely);
   4. records the SHA only when the sync succeeded, so failures are retried.
@@ -28,9 +28,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-REPO = os.environ.get("PRUP_REPO", "HDFGroup/hdf5")
-BASE = os.environ.get("PRUP_BASE", "develop")
-BLUEPRINT_ID = "hdf5-pr-sync"
+REPO = os.environ.get("PRUP_REPO", "iowarp/clio-core")
+BASE = os.environ.get("PRUP_BASE", "dev")
+BLUEPRINT_ID = "clio-core-pr-sync"
 BLUEPRINT_DIR = ROOT / BLUEPRINT_ID
 STATE_DIR = Path(os.environ.get("PRUP_STATE_DIR", ROOT / ".state"))
 CLIO_PORT = os.environ.get("CLIO_PORT", "17800")
@@ -169,7 +169,7 @@ class Clio:
             self.call("POST", f"/v1/agent-blueprints/{BLUEPRINT_ID}/update", {"scope": "global"})
         provider_id, _, model_id = CLIO_MODEL.partition("/")
         session = self.call("POST", "/v1/sessions", {
-            "title": f"hdf5 PR sync {datetime.now():%Y-%m-%d %H:%M}",
+            "title": f"clio-core PR sync {datetime.now():%Y-%m-%d %H:%M}",
             "approval_mode": "bypass",
             "model": {"provider_id": provider_id, "model_id": model_id},
         })
@@ -209,7 +209,7 @@ def run_direct(dry_run: bool) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--runner", choices=["clio", "direct"], default="clio")
-    ap.add_argument("--force", action="store_true", help="sync even if develop is unchanged")
+    ap.add_argument("--force", action="store_true", help="sync even if the base branch is unchanged")
     ap.add_argument("--dry-run", action="store_true", help="report only; record nothing")
     args = ap.parse_args()
 
